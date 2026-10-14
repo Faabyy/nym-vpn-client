@@ -1,6 +1,4 @@
 import { useEffect, useState } from 'react';
-import { type } from '@tauri-apps/plugin-os';
-
 import { motion } from 'motion/react';
 import { useAppStore } from '../../store';
 import {
@@ -16,11 +14,11 @@ import { NewBottomComponent } from './NewBottomComponent';
 import { TunnelState } from './TunnelState';
 
 const devMode = window._APP.devMode;
-const os = type();
 let compatChecked = false;
 
 function Home() {
   const networkCompat = useAppStore((s) => s.networkCompat);
+  const connected = useAppStore((s) => s.state === 'connected');
   useGatewayIndependenceWatcher();
   useDeviceLocationErrorToast();
   useExpiryReminderToast();
@@ -31,29 +29,31 @@ function Home() {
     if (devMode || compatChecked) {
       return;
     }
+    // A required update waits for an active connection to end, so Disconnect stays reachable.
+    if (connected && networkCompat?.appUpdatePolicy === 'required') {
+      return;
+    }
     if (
       networkCompat &&
       (networkCompat.core === false || networkCompat.tauri === false)
     ) {
-      // if either core or tauri is not compatible, show the update dialog
       compatChecked = true;
       setIsDialogUpdateOpen(true);
     }
-  }, [networkCompat]);
+  }, [networkCompat, connected]);
 
   return (
     <>
       <UpdateDialog />
       <DiagnosticsSuggestedDialog />
       <GatewayIndependenceWarningDialog />
-      {os !== 'windows' && (
-        <NetworkUpdateDialog
-          isOpen={isDialogUpdateOpen}
-          onClose={() => setIsDialogUpdateOpen(false)}
-          appUpdate={!networkCompat?.tauri}
-          daemonUpdate={!networkCompat?.core}
-        />
-      )}
+      <NetworkUpdateDialog
+        isOpen={isDialogUpdateOpen}
+        required={networkCompat?.appUpdatePolicy === 'required'}
+        onClose={() => setIsDialogUpdateOpen(false)}
+        appUpdate={!networkCompat?.tauri}
+        daemonUpdate={!networkCompat?.core}
+      />
       <motion.div
         initial={{ opacity: 0, x: '-1rem' }}
         animate={{ opacity: 1, x: 0 }}
