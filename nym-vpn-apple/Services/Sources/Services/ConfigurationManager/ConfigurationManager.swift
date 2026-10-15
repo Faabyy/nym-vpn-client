@@ -25,14 +25,26 @@ import PathManager
 #endif
 
     private var cancellables = Set<AnyCancellable>()
+    private var appUpdatePolicy = "dismissible"
+    private var appUpdatePolicies: [String: String] = [:]
+#if os(iOS)
+    private let updatePlatform = "ios"
+#else
+    private let updatePlatform = "macos"
+#endif
     private var lastCompatibleAppVersion: String? {
         didSet {
-            guard let lastCompatibleAppVersion else { return }
             Task { @MainActor in
-                isCurrentAppVersionCompatible = appVersion.compare(
-                    lastCompatibleAppVersion,
-                    options: .numeric
-                ) != .orderedAscending
+                let decision = appUpdatePrompt(
+                    local: appVersion,
+                    floor: lastCompatibleAppVersion,
+                    policy: appUpdatePolicy,
+                    policies: appUpdatePolicies,
+                    platform: updatePlatform
+                )
+                isCurrentAppVersionCompatible = !decision.show
+                showsAppUpdatePrompt = decision.show
+                blocksConnectForAppUpdate = decision.blockConnect
             }
         }
     }
@@ -85,6 +97,10 @@ import PathManager
 #endif
 
     @Published public var isCurrentAppVersionCompatible = true
+    @Published public var showsAppUpdatePrompt = false
+    // Kept here, not in the view, so a dismissed prompt stays dismissed for the whole session.
+    @Published public var appUpdatePromptDismissed = false
+    @Published public var blocksConnectForAppUpdate = false
 
     public var currentEnvString: String {
         currentEnv.rawValue
@@ -271,12 +287,16 @@ private extension ConfigurationManager {
 #if os(iOS)
                 let versions = await networkEnv?.networkCompatibility()
                 await MainActor.run {
+                    self.appUpdatePolicy = versions?.appUpdatePolicy ?? "dismissible"
+                    self.appUpdatePolicies = versions?.appUpdatePolicies ?? [:]
                     self.lastCompatibleAppVersion = versions?.ios
                     self.lastCompatibleCoreVersion = versions?.core
                 }
 #else
                 let versions = try await self.grpcManager.fetchCompatibleVersions()
                 await MainActor.run {
+                    self.appUpdatePolicy = versions.policy
+                    self.appUpdatePolicies = versions.policies
                     self.lastCompatibleAppVersion = versions.macOS
                     self.lastCompatibleCoreVersion = versions.core
                 }
